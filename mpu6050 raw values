@@ -1,0 +1,249 @@
+//////////////////////////define///////////////////////////////////
+#include "Wire.h"
+
+uint8_t buffer[14];
+int16_t ax, ay, az;
+int16_t gx, gy, gz;
+
+#define MPU6050_Defalt_Addr     0x68
+
+#define MPU6050_CLOCK_INTERNAL          0x00
+#define MPU6050_CLOCK_PLL_XGYRO         0x01
+#define MPU6050_CLOCK_PLL_YGYRO         0x02
+#define MPU6050_CLOCK_PLL_ZGYRO         0x03
+#define MPU6050_CLOCK_PLL_EXT32K        0x04
+#define MPU6050_CLOCK_PLL_EXT19M        0x05
+#define MPU6050_CLOCK_KEEP_RESET        0x07
+
+#define MPU6050_GYRO_FS_250         0x00
+#define MPU6050_GYRO_FS_500         0x01
+#define MPU6050_GYRO_FS_1000        0x02
+#define MPU6050_GYRO_FS_2000        0x03
+
+
+#define MPU6050_ACCEL_FS_2          0x00
+#define MPU6050_ACCEL_FS_4          0x01
+#define MPU6050_ACCEL_FS_8          0x02
+#define MPU6050_ACCEL_FS_16         0x03
+
+#define MPU6050_RA_PWR_MGMT_1       0x6B
+#define MPU6050_RA_PWR_MGMT_2       0x6C
+#define MPU6050_PWR1_CLKSEL_BIT         2
+#define MPU6050_PWR1_CLKSEL_LENGTH      3
+#define MPU6050_RA_GYRO_CONFIG      0x1B
+
+#define MPU6050_GCONFIG_FS_SEL_BIT      4
+#define MPU6050_GCONFIG_FS_SEL_LENGTH   2
+
+#define MPU6050_RA_ACCEL_CONFIG     0x1C
+#define MPU6050_ACONFIG_AFS_SEL_BIT         4
+#define MPU6050_ACONFIG_AFS_SEL_LENGTH      2
+
+#define MPU6050_PWR1_SLEEP_BIT          6
+#define MPU6050_RA_FIFO_EN          0x23
+
+#define MPU6050_TEMP_FIFO_EN_BIT    7
+#define MPU6050_XG_FIFO_EN_BIT      6
+#define MPU6050_YG_FIFO_EN_BIT      5
+#define MPU6050_ZG_FIFO_EN_BIT      4
+#define MPU6050_ACCEL_FIFO_EN_BIT   3
+
+#define MPU6050_RA_I2C_MST_CTRL     0x24
+#define MPU6050_I2C_MST_CLK_BIT     3
+#define MPU6050_I2C_MST_CLK_LENGTH  4
+#define MPU6050_RA_ACCEL_XOUT_H     0x3B
+
+#define MPU6050_RA_SMPLRT_DIV       0x19
+
+uint8_t devAddr;
+/////////////////////////I2Cdev///////////////////////////////////////////////////////////
+ bool writeBytes(uint8_t devAddr, uint8_t regAddr, uint8_t length, uint8_t* data) {
+    uint8_t status = 0;
+        Wire.beginTransmission(devAddr);
+        Wire.write((uint8_t) regAddr); // send address
+    
+    for (uint8_t i = 0; i < length; i++) 
+            Wire.write((uint8_t) data[i]);
+   
+        status = Wire.endTransmission();
+    return status == 0;
+}
+/////////////////////////////////////////////////////////////////////////////////
+bool writeBit(uint8_t devAddr, uint8_t regAddr, uint8_t bitNum, uint8_t data) {
+    uint8_t b;
+    readByte(devAddr, regAddr, &b);
+    b = (data != 0) ? (b | (1 << bitNum)) : (b & ~(1 << bitNum));
+    return writeByte(devAddr, regAddr, b);
+}
+//////////////////////////////////////////////////////////
+int8_t readByte(uint8_t devAddr, uint8_t regAddr, uint8_t *data) {
+    return readBytes(devAddr, regAddr, 1, data);
+}
+////////////////////////////////////////////////////////////////////////////////////////
+int8_t readBytes(uint8_t devAddr, uint8_t regAddr, uint8_t length, uint8_t *data) {
+    int8_t count = 0;
+    for (uint8_t k = 0; k < length; k += min(length, BUFFER_LENGTH)) {
+                Wire.beginTransmission(devAddr);
+                Wire.write(regAddr);
+                Wire.endTransmission();
+                Wire.beginTransmission(devAddr);
+                Wire.requestFrom(devAddr, (uint8_t)min(length - k, BUFFER_LENGTH));
+        
+                for (; Wire.available(); count++) {
+                    data[count] = Wire.read();
+                }
+            }
+    return count;
+}
+////////////////////////////////////////////////////////////////////////////////////////
+bool writeByte(uint8_t devAddr, uint8_t regAddr, uint8_t data) {
+    return writeBytes(devAddr, regAddr, 1, &data);
+}
+//////////////////////////////////////////////////////////////////////////////////////////
+int8_t readBit(uint8_t devAddr, uint8_t regAddr, uint8_t bitNum, uint8_t *data) {
+    uint8_t b;
+    uint8_t count = readByte(devAddr, regAddr, &b);
+    *data = b & (1 << bitNum);
+    return count;
+}
+//////////////////////////////////////////////////////////////////////////////////////////////
+bool writeBits(uint8_t devAddr, uint8_t regAddr, uint8_t bitStart, uint8_t length, uint8_t data) {
+    uint8_t b;
+    if (readByte(devAddr, regAddr, &b) != 0) {
+        uint8_t mask = ((1 << length) - 1) << (bitStart - length + 1);
+        data <<= (bitStart - length + 1); // shift data into correct position
+        data &= mask; // zero all non-important bits in data
+        b &= ~(mask); // zero all important bits in existing byte
+        b |= data; // combine data with existing byte
+        return writeByte(devAddr, regAddr, b);
+    } else {
+        return false;
+    }
+}
+////////////////////////////////////////////////////////////////////////////////////////////////
+int8_t readBits(uint8_t devAddr, uint8_t regAddr, uint8_t bitStart, uint8_t length, uint8_t *data) {
+   
+    uint8_t count, b;
+    if ((count = readByte(devAddr, regAddr, &b )) != 0) {
+        uint8_t mask = ((1 << length) - 1) << (bitStart - length + 1);
+        b &= mask;
+        b >>= (bitStart - length + 1);
+        *data = b;
+    }
+    return count;
+}
+//////////////////////////////MPU6050////////////////////////////////////////////////////
+void MPU6050(){
+  devAddr=MPU6050_Defalt_Addr;
+}
+///////////////////////////////////////////////////////////////////////////////////
+void initialize() {
+    setClockSource(MPU6050_CLOCK_PLL_XGYRO);
+    setFullScaleGyroRange(MPU6050_GYRO_FS_250);
+    setFullScaleAccelRange(MPU6050_ACCEL_FS_2);
+    setSleepEnabled(false); 
+}
+/////////////////////////////////////////////////////////////////////////////////////////
+void setClockSource(uint8_t source) {
+    writeBits(devAddr, MPU6050_RA_PWR_MGMT_1, MPU6050_PWR1_CLKSEL_BIT, MPU6050_PWR1_CLKSEL_LENGTH, source);
+}
+//////////////////////////////////////////////////////////////////////////////////////////
+void setFullScaleGyroRange(uint8_t range) {
+    writeBits(devAddr, MPU6050_RA_GYRO_CONFIG, MPU6050_GCONFIG_FS_SEL_BIT, MPU6050_GCONFIG_FS_SEL_LENGTH, range);
+}
+///////////////////////////////////////////////////////////////////////////////////////
+void setFullScaleAccelRange(uint8_t range) {
+    writeBits(devAddr, MPU6050_RA_ACCEL_CONFIG, MPU6050_ACONFIG_AFS_SEL_BIT, MPU6050_ACONFIG_AFS_SEL_LENGTH, range);
+}
+////////////////////////////////////////////////////////////////////////////////////////////
+void setSleepEnabled(bool enabled) {
+    writeBit(devAddr, MPU6050_RA_PWR_MGMT_1, MPU6050_PWR1_SLEEP_BIT, enabled);
+}
+///////////////////////////////////////////////////////////////////////////////////////
+uint8_t getRate() {
+    readByte(devAddr, MPU6050_RA_SMPLRT_DIV, buffer);
+    return buffer[0];
+}
+////////////////////////////////////////////////////////////////////////////////////////
+void setRate(uint8_t rate) {
+    writeByte(devAddr, MPU6050_RA_SMPLRT_DIV, rate);
+}
+///////////////////////////////////////////////////////////////////////////////////////
+bool getXGyroFIFOEnabled() {
+    readBit(devAddr, MPU6050_RA_FIFO_EN, MPU6050_XG_FIFO_EN_BIT, buffer);
+    return buffer[0];
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+void setXGyroFIFOEnabled(bool enabled) {
+    writeBit(devAddr, MPU6050_RA_FIFO_EN, MPU6050_XG_FIFO_EN_BIT, enabled);
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////
+bool getYGyroFIFOEnabled() {
+    readBit(devAddr, MPU6050_RA_FIFO_EN, MPU6050_YG_FIFO_EN_BIT, buffer);
+    return buffer[0];
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////
+void setYGyroFIFOEnabled(bool enabled) {
+    writeBit(devAddr, MPU6050_RA_FIFO_EN, MPU6050_YG_FIFO_EN_BIT, enabled);
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+bool getZGyroFIFOEnabled() {
+    readBit(devAddr, MPU6050_RA_FIFO_EN, MPU6050_ZG_FIFO_EN_BIT, buffer);
+    return buffer[0];
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+void setZGyroFIFOEnabled(bool enabled) {
+    writeBit(devAddr, MPU6050_RA_FIFO_EN, MPU6050_ZG_FIFO_EN_BIT, enabled);
+}
+//////////////////////////////////////////////////////////////////////////////////////////
+bool getAccelFIFOEnabled() {
+    readBit(devAddr, MPU6050_RA_FIFO_EN, MPU6050_ACCEL_FIFO_EN_BIT, buffer);
+    return buffer[0];
+}
+///////////////////////////////////////////////////////////////////////////////////
+void setAccelFIFOEnabled(bool enabled) {
+    writeBit(devAddr, MPU6050_RA_FIFO_EN, MPU6050_ACCEL_FIFO_EN_BIT, enabled);
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////
+uint8_t getMasterClockSpeed() {
+    readBits(devAddr, MPU6050_RA_I2C_MST_CTRL, MPU6050_I2C_MST_CLK_BIT, MPU6050_I2C_MST_CLK_LENGTH, buffer);
+    return buffer[0];
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void setMasterClockSpeed(uint8_t speed) {
+    writeBits(devAddr, MPU6050_RA_I2C_MST_CTRL, MPU6050_I2C_MST_CLK_BIT, MPU6050_I2C_MST_CLK_LENGTH, speed);
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+void getMotion6(int16_t* ax, int16_t* ay, int16_t* az, int16_t* gx, int16_t* gy, int16_t* gz) {
+    readBytes(devAddr, MPU6050_RA_ACCEL_XOUT_H, 14, buffer);
+    *ax = (((int16_t)buffer[0]) << 8) | buffer[1];
+    *ay = (((int16_t)buffer[2]) << 8) | buffer[3];
+    *az = (((int16_t)buffer[4]) << 8) | buffer[5];
+    *gx = (((int16_t)buffer[8]) << 8) | buffer[9];
+    *gy = (((int16_t)buffer[10]) << 8) | buffer[11];
+    *gz = (((int16_t)buffer[12]) << 8) | buffer[13];
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+void setup() {
+    Wire.begin();
+    Serial.begin(9600);
+    MPU6050();
+    initialize();
+    setRate(0);
+}
+
+void loop() {
+    
+        getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+       
+        Serial.print("a/g:\t");
+        Serial.print((float)ax/16384); Serial.print("\t");
+        Serial.print((float)ay/16384); Serial.print("\t");
+        Serial.print((float)az/16384); Serial.print("\t");
+        Serial.print((float)gx/131); Serial.print("\t");
+        Serial.print((float)gy/131); Serial.print("\t");
+        Serial.println((float)gz/131);
+    
+}
